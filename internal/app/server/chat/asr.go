@@ -1068,6 +1068,12 @@ func (a *ASRManager) getSpeakerResult() *speaker.IdentifyResult {
 		return nil
 	}
 
+	// 本轮声纹流式识别未激活（整轮无语音/启动失败/上一轮已 finish），
+	// 异步回调不会发送就绪信号，直接返回避免无谓的 200ms 等待。
+	if !a.session.speakerManager.IsActive() {
+		return nil
+	}
+
 	log.Debugf("speakerManager: %+v, IsActive: %+v", a.session.speakerManager, a.session.speakerManager.IsActive())
 
 	timeout := time.NewTimer(200 * time.Millisecond)
