@@ -76,6 +76,10 @@ func (l *LLMManager) handleToolCallResponse(ctx context.Context, respMsg *schema
 
 	if len(messageList) > 0 {
 		for _, msg := range messageList {
+			// assistant 消息已由上层保存（handleLLMResponse），跳过避免重复入历史导致 TTS 重复播报
+			if msg != nil && msg.Role == schema.Assistant {
+				continue
+			}
 			// 过滤掉Content为空的assistant消息，避免保存到历史记录中
 			// 空的assistant消息会导致后续LLM调用时出现400错误
 			if msg != nil && msg.Role == schema.Assistant && msg.Content == "" && len(msg.ToolCalls) == 0 {
