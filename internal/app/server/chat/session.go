@@ -1459,6 +1459,39 @@ func containsAny(text string, words []string) bool {
 	return false
 }
 
+// truncateText 截断文本到 n 个字符（中文按 rune）
+func truncateText(text string, n int) string {
+	runes := []rune(text)
+	if len(runes) <= n {
+		return text
+	}
+	return string(runes[:n])
+}
+
+// matchStockCode 常见股票名到代码映射
+func matchStockCode(text string) string {
+	stocks := map[string]string{
+		"贵州茅台": "sh600519", "茅台": "sh600519",
+		"五粮液":  "sz000858",
+		"宁德时代": "sz300750", "宁德": "sz300750",
+		"比亚迪":  "sz002594",
+		"腾讯":   "hk00700",
+		"阿里巴巴": "hk09988", "阿里": "hk09988",
+		"东方财富": "sz300059",
+		"招商银行": "sh600036",
+		"中国平安": "sh601318",
+		"特斯拉":  "tsla",
+		"苹果":   "aapl",
+		"英伟达":  "nvda",
+	}
+	for name, code := range stocks {
+		if strings.Contains(text, name) {
+			return code
+		}
+	}
+	return ""
+}
+
 // speakSimple 直接播报一句文本（不调 LLM）
 func (s *ChatSession) speakSimple(ctx context.Context, text string) {
 	s.ttsManager.EnqueueTtsStartWithReason(ctx, "ChatSession.ruleEngine")
@@ -1541,6 +1574,38 @@ func (s *ChatSession) handleRuleCommand(ctx context.Context, text string) bool {
 			s.speakSimple(ctx, result)
 		} else {
 			s.speakSimple(ctx, "天气查询失败。")
+		}
+		return true
+	}
+
+	// 3.5 新闻
+	if containsAny(t, []string{"新闻", "热点", "资讯"}) {
+		result := s.callMCPTool(ctx, "web_search", `{"query":"今日新闻"}`)
+		if result != "" {
+			s.speakSimple(ctx, truncateText(result, 200))
+		} else {
+			s.speakSimple(ctx, "新闻没查到。")
+		}
+		return true
+	}
+
+	// 3.6 股票/行情
+	if containsAny(t, []string{"股票", "行情", "涨跌", "股价", "市值"}) {
+		code := matchStockCode(t)
+		if code != "" {
+			result := s.callMCPTool(ctx, "stock_query", `{"codes":"`+code+`"}`)
+			if result != "" {
+				s.speakSimple(ctx, truncateText(result, 200))
+			} else {
+				s.speakSimple(ctx, "行情没查到。")
+			}
+		} else {
+			result := s.callMCPTool(ctx, "web_search", `{"query":"`+t+` 股价"}`)
+			if result != "" {
+				s.speakSimple(ctx, truncateText(result, 200))
+			} else {
+				s.speakSimple(ctx, "没查到这只股票。")
+			}
 		}
 		return true
 	}
