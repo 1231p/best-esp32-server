@@ -386,10 +386,10 @@ func (s *ChatSession) loadFromManager() ([]*schema.Message, error) {
 	}
 
 	req := &history.GetMessagesRequest{
-		DeviceID:  s.clientState.DeviceID,
-		AgentID:   s.clientState.AgentID,
-		SessionID: s.clientState.SessionID,
-		Limit:     20,
+		DeviceID: s.clientState.DeviceID,
+		AgentID:  s.clientState.AgentID,
+		// SessionID 不传：设备每次唤醒都是新 session，按 session 过滤会导致跨会话记忆丢失
+		Limit: 20,
 	}
 
 	resp, err := client.GetMessages(s.ctx, req)
