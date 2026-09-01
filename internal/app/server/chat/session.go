@@ -1577,7 +1577,33 @@ func (s *ChatSession) handleRuleCommand(ctx context.Context, text string) bool {
 		}
 	}
 
-	return false
+	// 5. 你是谁
+	if containsAny(t, []string{"你是谁", "你叫什么", "你的名字"}) {
+		s.speakSimple(ctx, "我是宇宙第二聪明。")
+		return true
+	}
+
+	// 6. 现在几点/时间
+	if containsAny(t, []string{"几点", "时间", "现在几"}) {
+		s.speakSimple(ctx, time.Now().Format("现在是15点04分"))
+		return true
+	}
+
+	// 7. 谢谢
+	if containsAny(t, []string{"谢谢", "多谢", "感谢"}) {
+		s.speakSimple(ctx, "不客气，宇宙第一聪明。")
+		return true
+	}
+
+	// 8. 再见
+	if containsAny(t, []string{"再见", "拜拜", "晚安"}) {
+		s.speakSimple(ctx, "再见，宇宙第一聪明。")
+		return true
+	}
+
+	// 兜底：规则不命中也不调 LLM，固定回复，彻底杜绝循环和废话
+	s.speakSimple(ctx, "这个我还没学会，换个说法试试。")
+	return true
 }
 
 func (s *ChatSession) ClearChatTextQueue() {
