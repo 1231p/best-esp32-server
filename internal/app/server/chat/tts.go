@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1312,8 +1313,36 @@ func (t *TTSManager) ClearTTSQueue() {
 	}
 }
 
+// stripMarkdownForSpeech 去除语音播报时的 Markdown 符号（星号/井号/反引号/括号等）
+func stripMarkdownForSpeech(text string) string {
+	if text == "" {
+		return text
+	}
+	// 去掉 **加粗**、*斜体*、__下划线__、~~删除线~~
+	re := regexp.MustCompile(`[*_~]{1,3}`)
+	text = re.ReplaceAllString(text, "")
+	// 去掉 # 标题符号
+	re = regexp.MustCompile(`#{1,6}s*`)
+	text = re.ReplaceAllString(text, "")
+	// 去掉反引号和行内代码
+	re = regexp.MustCompile(`[^`]+`)
+	text = re.ReplaceAllString(text, "")
+	// 去掉链接 [text](url) -> text
+	re = regexp.MustCompile(`[([^]]+)]([^)]*)`)
+	text = re.ReplaceAllString(text, "$1")
+	// 去掉列表符号 - * + 1. 等行首符号
+	re = regexp.MustCompile(`(?m)^s*(?:[-*+]s+|d+[.)]s+)`)
+	text = re.ReplaceAllString(text, "")
+	// 去掉残留的括号符号 () [] {}
+	re = regexp.MustCompile(`[[]{}()]`)
+	text = re.ReplaceAllString(text, "")
+	// 清理多余空白
+	return strings.Join(strings.Fields(text), " ")
+}
+
 // handleTts 单条 TTS：生成并向 sessionAudioQueue 推送 SentenceStart → Frame… → SentenceEnd
 func (t *TTSManager) handleTts(ctx context.Context, generation uint64, metricCycle uint64, llmResponse llm_common.LLMResponseStruct, onStartFunc func(), onEndFunc func(error)) error {
+	llmResponse.Text = stripMarkdownForSpeech(llmResponse.Text)
 	if strings.TrimSpace(llmResponse.Text) == "" {
 		if onEndFunc != nil {
 			onEndFunc(nil)
