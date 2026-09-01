@@ -1313,7 +1313,7 @@ func (t *TTSManager) ClearTTSQueue() {
 	}
 }
 
-// stripMarkdownForSpeech 去除语音播报时的 Markdown 符号（星号/井号/反引号/括号等）
+// stripMarkdownForSpeech 去除语音播报时的 Markdown/emoji/动作标注符号
 func stripMarkdownForSpeech(text string) string {
 	if text == "" {
 		return text
@@ -1333,8 +1333,17 @@ func stripMarkdownForSpeech(text string) string {
 	// 去掉列表符号 - * + 1. 等行首符号
 	re = regexp.MustCompile(`(?m)^\s*(?:[-*+]\s+|\d+[.)]\s+)`)
 	text = re.ReplaceAllString(text, "")
-	// 去掉残留的括号符号 () [] {}
+	// 去掉动作/表情标注：（大笑）（笑）（挥手）等
+	re = regexp.MustCompile(`（[^）]*?(?:笑|挥手|点头|鼓掌|思考|惊讶|害羞|委屈|欢呼|握拳|比心|耸肩|眨眼|无语|加油|叹气|敬礼|得意|满意|开心|难过|尴尬|无奈)[^）]*?）`)
+	text = re.ReplaceAllString(text, "")
+	// 去掉全角括号（空壳）
+	re = regexp.MustCompile(`[（）]`)
+	text = re.ReplaceAllString(text, "")
+	// 去掉半角括号符号 () [] {}
 	re = regexp.MustCompile(`[\[\]{}()]`)
+	text = re.ReplaceAllString(text, "")
+	// 去掉 emoji（Unicode 表情符号区段）
+	re = regexp.MustCompile(`[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{FE0F}\x{200D}\x{1F1E6}-\x{1F1FF}]`)
 	text = re.ReplaceAllString(text, "")
 	// 清理多余空白
 	return strings.Join(strings.Fields(text), " ")
