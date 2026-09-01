@@ -1435,12 +1435,43 @@ func (s *ChatSession) processChatText(ctx context.Context) {
 			continue
 		}
 
+		// 休眠/安静关键词硬拦截：不调 LLM，直接播安静语并结束本轮
+		if isSleepCommand(item.text) {
+			log.Infof("收到休眠指令: %s", item.text)
+			s.ttsManager.EnqueueTtsStartWithReason(item.ctx, "ChatSession.sleepCommand")
+			err := s.ttsManager.handleTextResponse(item.ctx, llm_common.LLMResponseStruct{
+				Text:    "好的，我先安静一会儿。",
+				IsStart: true,
+				IsEnd:   true,
+			}, true)
+			if err != nil {
+				log.Errorf("播报安静语失败: %v", err)
+			}
+			s.ttsManager.RequestTurnEnd(item.ctx, err)
+			s.ttsManager.EnqueueTtsStopWithReason(item.ctx, "ChatSession.sleepCommand")
+			continue
+		}
+
 		err = s.actionDoChat(item.ctx, item.text, item.speakerResult)
 		if err != nil {
 			log.Errorf("处理对话失败: %v", err)
 			continue
 		}
 	}
+}
+
+// isSleepCommand 判断是否休眠/安静指令
+func isSleepCommand(text string) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	sleepWords := []string{"休眠", "睡觉", "闭嘴", "别说话", "安静", "别吵", "停止说话", "静音"}
+	for _, w := range sleepWords {
+		if strings.Contains(text, w) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *ChatSession) ClearChatTextQueue() {
