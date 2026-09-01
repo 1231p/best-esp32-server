@@ -113,8 +113,19 @@ func (l *LLMManager) handleToolCallResponse(ctx context.Context, respMsg *schema
 	}
 
 	// 如果工具调用成功且没有被标记为停止处理，则继续LLM调用
+	// 动作类工具（self.otto.*）执行后不递归：动作本身就是回应，避免 LLM 反复确认导致重复播报
 	if invokeToolSuccess && !shouldStopLLMProcessing {
-		l.DoLLmRequest(ctx, nil, l.einoTools, true, nil)
+		isActionTool := false
+		for _, tc := range tools {
+			name := tc.Function.Name
+			if strings.HasPrefix(name, "self.otto") || strings.HasPrefix(name, "self_otto") {
+				isActionTool = true
+				break
+			}
+		}
+		if !isActionTool {
+			l.DoLLmRequest(ctx, nil, l.einoTools, true, nil)
+		}
 	}
 
 	return toolCallResponseSummary{
