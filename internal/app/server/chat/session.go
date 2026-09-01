@@ -1601,9 +1601,8 @@ func (s *ChatSession) handleRuleCommand(ctx context.Context, text string) bool {
 		return true
 	}
 
-	// 兜底：规则不命中也不调 LLM，固定回复，彻底杜绝循环和废话
-	s.speakSimple(ctx, "这个我还没学会，换个说法试试。")
-	return true
+	// 未命中规则：走 LLM 分身（可查新闻、行情、回答问题）
+	return false
 }
 
 func (s *ChatSession) ClearChatTextQueue() {
