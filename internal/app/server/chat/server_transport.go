@@ -143,7 +143,7 @@ func (s *ServerTransport) SendMqttGoodbye() error {
 func (s *ServerTransport) SendHello(transportType string, audioFormat *types_audio.AudioFormat, udpConfig *UdpConfig) error {
 	msg := ServerMessage{
 		Type:        MessageTypeHello,
-		Text:        "欢迎使用小智服务器",
+		Text:        "欢迎使用 Best 服务器",
 		SessionID:   s.clientState.SessionID,
 		Transport:   transportType,
 		AudioFormat: audioFormat,
