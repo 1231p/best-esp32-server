@@ -1521,9 +1521,10 @@ func (s *ChatSession) handleRuleCommand(ctx context.Context, text string) bool {
 		return true // 空消息直接忽略，不响应
 	}
 
-	// 1. 休眠/闭嘴/安静
+	// 1. 休眠/闭嘴/安静：播完立即关闭会话，设备回到待机，不再收音识别
 	if containsAny(t, []string{"休眠", "睡觉", "闭嘴", "别说话", "安静", "别吵", "静音", "停止说话"}) {
 		s.speakSimple(ctx, "好的，我先安静一会儿。")
+		s.CloseWithReason(chatSessionCloseReasonExplicitExit)
 		return true
 	}
 
