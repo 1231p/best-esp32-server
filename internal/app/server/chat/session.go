@@ -1435,20 +1435,8 @@ func (s *ChatSession) processChatText(ctx context.Context) {
 			continue
 		}
 
-		// 休眠/安静关键词硬拦截：不调 LLM，直接播安静语并结束本轮
-		if isSleepCommand(item.text) {
-			log.Infof("收到休眠指令: %s", item.text)
-			s.ttsManager.EnqueueTtsStartWithReason(item.ctx, "ChatSession.sleepCommand")
-			err := s.ttsManager.handleTextResponse(item.ctx, llm_common.LLMResponseStruct{
-				Text:    "好的，我先安静一会儿。",
-				IsStart: true,
-				IsEnd:   true,
-			}, true)
-			if err != nil {
-				log.Errorf("播报安静语失败: %v", err)
-			}
-			s.ttsManager.RequestTurnEnd(item.ctx, err)
-			s.ttsManager.EnqueueTtsStopWithReason(item.ctx, "ChatSession.sleepCommand")
+		// 规则引擎：基础指令硬处理，不调 LLM（问候/天气/动作/休眠）
+		if s.handleRuleCommand(item.ctx, item.text) {
 			continue
 		}
 
@@ -1460,17 +1448,109 @@ func (s *ChatSession) processChatText(ctx context.Context) {
 	}
 }
 
-// isSleepCommand 判断是否休眠/安静指令
-func isSleepCommand(text string) bool {
-	if strings.TrimSpace(text) == "" {
-		return false
-	}
-	sleepWords := []string{"休眠", "睡觉", "闭嘴", "别说话", "安静", "别吵", "停止说话", "静音"}
-	for _, w := range sleepWords {
+// containsAny 判断 text 是否包含任一关键词
+func containsAny(text string, words []string) bool {
+	for _, w := range words {
 		if strings.Contains(text, w) {
 			return true
 		}
 	}
+	return false
+}
+
+// speakSimple 直接播报一句文本（不调 LLM）
+func (s *ChatSession) speakSimple(ctx context.Context, text string) {
+	s.ttsManager.EnqueueTtsStartWithReason(ctx, "ChatSession.ruleEngine")
+	err := s.ttsManager.handleTextResponse(ctx, llm_common.LLMResponseStruct{
+		Text:    text,
+		IsStart: true,
+		IsEnd:   true,
+	}, true)
+	if err != nil {
+		log.Errorf("播报失败: %v", err)
+	}
+	s.ttsManager.RequestTurnEnd(ctx, err)
+	s.ttsManager.EnqueueTtsStopWithReason(ctx, "ChatSession.ruleEngine")
+}
+
+// callMCPTool 调用一个 MCP 工具并返回结果文本
+func (s *ChatSession) callMCPTool(ctx context.Context, toolName string, args string) string {
+	state := s.clientState
+	transportType := s.serverTransport.GetTransportType()
+	toolObj, ok := mcp.GetToolByNameWithTransport(state.DeviceID, state.AgentID, transportType, toolName, state.DeviceConfig.MCPServiceNames)
+	if !ok || toolObj == nil {
+		return ""
+	}
+	fcResult, err := toolObj.InvokableRun(ctx, args)
+	if err != nil {
+		log.Errorf("工具调用失败 %s: %v", toolName, err)
+		return ""
+	}
+	return fcResult
+}
+
+// handleRuleCommand 规则引擎：命中返回 true（已处理），未命中返回 false（走 LLM）
+func (s *ChatSession) handleRuleCommand(ctx context.Context, text string) bool {
+	t := strings.TrimSpace(text)
+	if t == "" {
+		return true // 空消息直接忽略，不响应
+	}
+
+	// 1. 休眠/闭嘴/安静
+	if containsAny(t, []string{"休眠", "睡觉", "闭嘴", "别说话", "安静", "别吵", "静音", "停止说话"}) {
+		s.speakSimple(ctx, "好的，我先安静一会儿。")
+		return true
+	}
+
+	// 2. 问候
+	if containsAny(t, []string{"你好", "嗨", "哈喽", "在吗", "早上好", "晚上好", "下午好", "中午好"}) {
+		s.speakSimple(ctx, "你好，宇宙第一聪明。")
+		return true
+	}
+
+	// 3. 天气
+	if strings.Contains(t, "天气") {
+		result := s.callMCPTool(ctx, "get_weather", `{"city":"sanya"}`)
+		if result != "" {
+			s.speakSimple(ctx, result)
+		} else {
+			s.speakSimple(ctx, "天气查询失败。")
+		}
+		return true
+	}
+
+	// 4. 动作指令（直接执行，不说话）
+	actionMap := []struct{ kw, action string }{
+		{"坐下", "sit"},
+		{"站起来", "home"},
+		{"站直", "home"},
+		{"复位", "home"},
+		{"太空步", "moonwalk"},
+		{"月球漫步", "moonwalk"},
+		{"跳舞", "swing"},
+		{"摇摆", "swing"},
+		{"挥手", "hand_wave"},
+		{"跳跃", "jump"},
+		{"跳一下", "jump"},
+		{"广播体操", "radio_calisthenics"},
+		{"大风车", "windmill"},
+		{"起飞", "takeoff"},
+		{"健身", "fitness"},
+		{"打招呼", "greeting"},
+		{"害羞", "shy"},
+	}
+	for _, a := range actionMap {
+		if strings.Contains(t, a.kw) {
+			result := s.callMCPTool(ctx, "self_otto_action", `{"action":"`+a.action+`"}`)
+			if result != "" {
+				s.speakSimple(ctx, result)
+			} else {
+				s.speakSimple(ctx, "好的。")
+			}
+			return true
+		}
+	}
+
 	return false
 }
 
