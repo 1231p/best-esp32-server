@@ -112,19 +112,45 @@ func (l *LLMManager) handleToolCallResponse(ctx context.Context, respMsg *schema
 		}, nil
 	}
 
-	// 如果工具调用成功且没有被标记为停止处理，则继续LLM调用
-	// 动作类工具（self.otto.*）执行后不递归：动作本身就是回应，避免 LLM 反复确认导致重复播报
+	// 工具调用成功后的处理
 	if invokeToolSuccess && !shouldStopLLMProcessing {
 		isActionTool := false
+		isInfoTool := false
 		for _, tc := range tools {
 			name := tc.Function.Name
 			if strings.HasPrefix(name, "self.otto") || strings.HasPrefix(name, "self_otto") {
 				isActionTool = true
 				break
 			}
+			if name == "web_search" || name == "stock_query" || name == "get_weather" || name == "read_memory" {
+				isInfoTool = true
+			}
 		}
-		if !isActionTool {
-			l.DoLLmRequest(ctx, nil, l.einoTools, true, nil)
+		if isActionTool {
+			// 动作类工具：不递归，动作本身就是回应
+		} else if isInfoTool {
+			// 信息类工具：结果直接播报（截断），不递归 LLM，杜绝循环
+			for _, r := range results {
+				txt := extractMCPText(r.message.Content)
+				if txt != "" {
+					runes := []rune(txt)
+					if len(runes) > 200 {
+						txt = string(runes[:200])
+					}
+					if l.session != nil {
+						l.session.speakSimple(ctx, txt)
+					}
+					break
+				}
+			}
+		} else {
+			// 其他工具：递归，但限制轮数防止无限循环
+			nest, _ := ctx.Value("nest").(int)
+			if nest < 3 {
+				l.DoLLmRequest(context.WithValue(ctx, "nest", nest+1), nil, l.einoTools, true, nil)
+			} else {
+				log.Warnf("工具调用轮数达到上限(nest=%d)，停止递归", nest)
+			}
 		}
 	}
 
