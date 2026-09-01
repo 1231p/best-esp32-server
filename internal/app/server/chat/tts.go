@@ -1970,6 +1970,7 @@ func (t *TTSManager) handleStreamTts(item TTSQueueItem) error {
 				}
 				return item.ctx.Err()
 			}
+			resp.Text = stripMarkdownForSpeech(resp.Text)
 			outChan, release, genErr := t.generateTtsOnly(item.ctx, item.metricCycle, resp)
 			if genErr != nil {
 				if firstSegment {
