@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -1473,6 +1474,30 @@ func (s *ChatSession) speakSimple(ctx context.Context, text string) {
 	s.ttsManager.EnqueueTtsStopWithReason(ctx, "ChatSession.ruleEngine")
 }
 
+// extractMCPText 从 MCP 工具返回中提取纯文本（兼容 FastMCP wrap_result 格式）
+func extractMCPText(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	var parsed map[string]interface{}
+	if json.Unmarshal([]byte(raw), &parsed) == nil {
+		if content, ok := parsed["content"].([]interface{}); ok && len(content) > 0 {
+			if first, ok := content[0].(map[string]interface{}); ok {
+				if txt, ok := first["text"].(string); ok && txt != "" {
+					return txt
+				}
+			}
+		}
+		if txt, ok := parsed["text"].(string); ok && txt != "" {
+			return txt
+		}
+		if txt, ok := parsed["result"].(string); ok && txt != "" {
+			return txt
+		}
+	}
+	return raw
+}
+
 // callMCPTool 调用一个 MCP 工具并返回结果文本
 func (s *ChatSession) callMCPTool(ctx context.Context, toolName string, args string) string {
 	state := s.clientState
@@ -1486,7 +1511,7 @@ func (s *ChatSession) callMCPTool(ctx context.Context, toolName string, args str
 		log.Errorf("工具调用失败 %s: %v", toolName, err)
 		return ""
 	}
-	return fcResult
+	return extractMCPText(fcResult)
 }
 
 // handleRuleCommand 规则引擎：命中返回 true（已处理），未命中返回 false（走 LLM）
