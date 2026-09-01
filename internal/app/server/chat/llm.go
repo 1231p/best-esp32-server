@@ -943,8 +943,9 @@ func (l *LLMManager) handleLLMResponse(ctx context.Context, userMessage *schema.
 				}
 
 				hasText := strings.TrimSpace(llmResponse.Text) != ""
-				if hasText || llmResponse.IsStart || llmResponse.IsEnd {
+				if (hasText || llmResponse.IsStart || llmResponse.IsEnd) && len(toolCalls) == 0 {
 					// 双流式收尾依赖空文本的 IsEnd 信号，不能只在有文本时才传给 TTS。
+					// 工具调用轮静音：不播 TTS，避免"好的，我来执行XX"被反复播报
 					if err := l.ttsManager.handleTextResponseWithHooks(ctx, llmResponse, false, onTTSItemEnqueued, onTTSPlaybackStart); err != nil {
 						result.ok = true
 						return result, err
