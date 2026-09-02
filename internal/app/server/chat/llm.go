@@ -878,6 +878,11 @@ func (l *LLMManager) handleLLMResponse(ctx context.Context, userMessage *schema.
 	toolExecutor := newToolCallExecutor(l, toolExecCtx)
 	assistantSaved := false
 	result := llmHandleResult{}
+	// 整段合成缓冲：非双流 TTS 下逐短句合成会因网络延迟逐句卡顿。
+	// 把本轮回复文本合并为一段，IsEnd 时一次性合成（连续音频无句间空隙）。
+	// 收到 tool_calls 即清空（工具轮前缀静音）。
+	speechBuf := &strings.Builder{}
+	speechMuted := false
 
 	saveInterruptedAssistant := func() {
 		if assistantSaved {
@@ -940,24 +945,39 @@ func (l *LLMManager) handleLLMResponse(ctx context.Context, userMessage *schema.
 					log.Debugf("获取到工具: %+v", llmResponse.ToolCalls)
 					toolCalls = append(toolCalls, llmResponse.ToolCalls...)
 					toolExecutor.Submit(llmResponse.ToolCalls)
+					// 工具轮静音：清空已缓冲的前缀文本，不播"好的我来查XX"
+					if speechBuf.Len() > 0 {
+						log.Debugf("检测到工具调用，丢弃缓冲的前缀文本: %s", speechBuf.String())
+					}
+					speechBuf.Reset()
+					speechMuted = true
 				}
 
 				hasText := strings.TrimSpace(llmResponse.Text) != ""
-				if (hasText || llmResponse.IsStart || llmResponse.IsEnd) && len(toolCalls) == 0 {
-					// 双流式收尾依赖空文本的 IsEnd 信号，不能只在有文本时才传给 TTS。
-					// 工具轮静音：检测到本轮有工具调用（toolCalls 已累积）时不播 TTS。
-					// 前缀控制主要靠人格约束（见 agents 表 prompt：调工具前不要说话）
-					if err := l.ttsManager.handleTextResponseWithHooks(ctx, llmResponse, false, onTTSItemEnqueued, onTTSPlaybackStart); err != nil {
-						result.ok = true
-						return result, err
-					}
-				}
+				// 文本先写入合并缓冲（整段合成，避免短句逐句合成的卡顿）
 				if hasText {
+					speechBuf.WriteString(llmResponse.Text)
 					fullText.WriteString(llmResponse.Text)
 				}
 
 				if llmResponse.IsEnd {
 					if len(toolCalls) == 0 {
+						// 整段合成：把本轮回复合并为一次 TTS 请求（连续音频，消除逐句卡顿）
+						mergedText := strings.TrimSpace(speechBuf.String())
+						if mergedText != "" && !speechMuted {
+							merged := llm_common.LLMResponseStruct{Text: mergedText, IsStart: true, IsEnd: true}
+							if err := l.ttsManager.handleTextResponseWithHooks(ctx, merged, false, onTTSItemEnqueued, onTTSPlaybackStart); err != nil {
+								result.ok = true
+								return result, err
+							}
+						} else if !hasText && !speechMuted && mergedText == "" {
+							// 双流式收尾依赖空文本的 IsEnd 信号
+							if err := l.ttsManager.handleTextResponseWithHooks(ctx, llmResponse, false, onTTSItemEnqueued, onTTSPlaybackStart); err != nil {
+								result.ok = true
+								return result, err
+							}
+						}
+						speechBuf.Reset()
 						//写到redis中
 						if userMessage != nil {
 							if userMessage.Role == schema.User {
