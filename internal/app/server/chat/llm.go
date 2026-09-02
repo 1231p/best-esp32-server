@@ -660,9 +660,9 @@ func (l *LLMManager) handleLLMResponseChannelAsync(ctx context.Context, userMess
 	log.Debugf("AddLLMResponseChannel nest: %+v", val)
 	if n, ok := val.(int); ok {
 		nest = n
-		if nest > 1 {
-			needSendTtsCmd = false
-		}
+		// 注意：不再用 nest>1 关闭 TTS 播放。工具轮/动作轮的前缀静音由
+		// handleLLMResponse 的合并缓冲处理（toolCalls 到达即清空缓冲，IsEnd 无文本不播）；
+		// 递归总结轮（nest>=2，纯文本）必须能正常出声，否则工具查到了结果却"不开口"。
 	}
 	if options.disableTTSCommands {
 		needSendTtsCmd = false
@@ -768,9 +768,9 @@ func (l *LLMManager) HandleLLMResponseChannelSync(ctx context.Context, userMessa
 	log.Debugf("AddLLMResponseChannel nest: %+v", val)
 	if n, ok := val.(int); ok {
 		nest = n
-		if nest > 1 {
-			needSendTtsCmd = false
-		}
+		// 注意：不再用 nest>1 关闭 TTS 播放。工具轮/动作轮的前缀静音由
+		// handleLLMResponse 的合并缓冲处理（toolCalls 到达即清空缓冲，IsEnd 无文本不播）；
+		// 递归总结轮（nest>=2，纯文本）必须能正常出声，否则工具查到了结果却"不开口"。
 	}
 
 	// 在 context 中初始化或复用 fullText（用于聊天历史）
