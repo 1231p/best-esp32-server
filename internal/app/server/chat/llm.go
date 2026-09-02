@@ -1000,13 +1000,19 @@ func (l *LLMManager) handleLLMResponse(ctx context.Context, userMessage *schema.
 								}*/
 							}
 						}
-						strFullText := fullText.String()
-						if strings.TrimSpace(strFullText) != "" || len(toolCalls) > 0 {
-							if err := l.AddLlmMessage(ctx, schema.AssistantMessage(strFullText, toolCalls)); err != nil {
-								log.Errorf("保存助手消息失败: %v", err)
-							} else {
-								assistantSaved = true
-							}
+					}
+					// 保存 assistant 消息到对话历史（必须在 handleToolCallResponse 递归之前）：
+					// 有工具调用时 text 置空、只存 tool_calls（避免前缀废话污染历史），
+					// 这样 AlignToolMessages 会保留对应的 tool 结果消息，递归总结轮 LLM 才能看到搜索结果。
+					saveText := ""
+					if len(toolCalls) == 0 {
+						saveText = strings.TrimSpace(fullText.String())
+					}
+					if saveText != "" || len(toolCalls) > 0 {
+						if err := l.AddLlmMessage(ctx, schema.AssistantMessage(saveText, toolCalls)); err != nil {
+							log.Errorf("保存助手消息失败: %v", err)
+						} else {
+							assistantSaved = true
 						}
 					}
 					if len(toolCalls) > 0 {
