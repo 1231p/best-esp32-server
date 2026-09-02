@@ -1417,8 +1417,15 @@ func waitForTTSTurnDrainIfRoot(ctx context.Context) error {
 	if ctx == nil {
 		return nil
 	}
+	// 注意：nest>1（工具递归总结轮）也必须等待 TTS 播放完成后再收尾（stop），
+	// 否则总结轮文本刚入队就被 finishTTSTurn 的 stop 掐断，音频只合成几百毫秒，
+	// 设备只收到 tts text（屏幕显示字）却没有声音。
 	if nest, ok := ctx.Value("nest").(int); ok && nest > 1 {
-		return nil
+		tracker := ttsTurnTrackerFromContext(ctx)
+		if tracker == nil {
+			return nil
+		}
+		return tracker.Wait(ctx)
 	}
 
 	tracker := ttsTurnTrackerFromContext(ctx)
