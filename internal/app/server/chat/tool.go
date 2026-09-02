@@ -125,12 +125,11 @@ func (l *LLMManager) handleToolCallResponse(ctx context.Context, respMsg *schema
 		if isActionTool {
 			// 动作类工具：不递归，动作本身就是回应
 		} else {
-			// 信息类/其他工具：递归 LLM，让它把工具结果提炼成 1-3 句口语播报。
-			// 直接念工具返回的原文（搜索列表/门户条目）是"生肉"，LLM 总结才像人话。
-			// 前缀已由 llm.go 缓冲静音，人格已约束简洁，可放心递归。
+			// 信息类/其他工具：递归 LLM 总结工具结果（1-3 句口语播报）。
+			// 关键：递归总结轮【不带工具列表】(nil)，LLM 只能文字总结，杜绝工具循环爆炸
 			nest, _ := ctx.Value("nest").(int)
 			if nest < 3 {
-				l.DoLLmRequest(context.WithValue(ctx, "nest", nest+1), nil, l.einoTools, true, nil)
+				l.DoLLmRequest(context.WithValue(ctx, "nest", nest+1), nil, nil, true, nil)
 			} else {
 				log.Warnf("工具调用轮数达到上限(nest=%d)，停止递归", nest)
 			}
