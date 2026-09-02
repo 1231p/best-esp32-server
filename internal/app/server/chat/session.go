@@ -1475,6 +1475,9 @@ func matchStockCode(text string) string {
 		"五粮液":  "sz000858",
 		"宁德时代": "sz300750", "宁德": "sz300750",
 		"比亚迪":  "sz002594",
+		"金盘科技": "sh688676", "金盘": "sh688676",
+		"中际旭创": "sz300308",
+		"新易盛":  "sz300502",
 		"腾讯":   "hk00700",
 		"阿里巴巴": "hk09988", "阿里": "hk09988",
 		"东方财富": "sz300059",
@@ -1554,129 +1557,22 @@ func (s *ChatSession) handleRuleCommand(ctx context.Context, text string) bool {
 		return true // 空消息直接忽略，不响应
 	}
 
-	// 0. 停止：立即停止动作和说话
+	// 硬指令1：停（立即停止动作和说话）
 	if t == "停" || t == "停下" || t == "停下来" || t == "停止" || containsAny(t, []string{"别动", "别播了", "别念了"}) {
 		s.callMCPTool(ctx, "self_otto_stop", `{}`)
 		s.speakSimple(ctx, "好的。")
 		return true
 	}
 
-	// 1. 休眠/闭嘴/安静：播完立即关闭会话，设备回到待机，不再收音识别
+	// 硬指令2：休眠/闭嘴（只回一句，不关闭会话）
 	if containsAny(t, []string{"休眠", "睡觉", "闭嘴", "别说话", "安静", "别吵", "静音", "停止说话"}) {
 		s.speakSimple(ctx, "好的，我先安静一会儿。")
-		s.CloseWithReason(chatSessionCloseReasonExplicitExit)
 		return true
 	}
 
-	// 2. 问候
-	if containsAny(t, []string{"你好", "嗨", "哈喽", "在吗", "早上好", "晚上好", "下午好", "中午好"}) {
-		s.speakSimple(ctx, "你好，宇宙第一聪明。")
-		return true
-	}
-
-	// 3. 天气
-	if strings.Contains(t, "天气") {
-		result := s.callMCPTool(ctx, "get_weather", `{"city":"sanya"}`)
-		if result != "" {
-			s.speakSimple(ctx, result)
-		} else {
-			s.speakSimple(ctx, "天气查询失败。")
-		}
-		return true
-	}
-
-	// 3.5 新闻
-	if containsAny(t, []string{"新闻", "热点", "资讯"}) {
-		result := s.callMCPTool(ctx, "web_search", `{"query":"今日新闻"}`)
-		if result != "" {
-			s.speakSimple(ctx, truncateText(result, 200))
-		} else {
-			s.speakSimple(ctx, "新闻没查到。")
-		}
-		return true
-	}
-
-	// 3.6 股票/行情
-	if containsAny(t, []string{"股票", "行情", "涨跌", "股价", "市值"}) {
-		code := matchStockCode(t)
-		if code != "" {
-			result := s.callMCPTool(ctx, "stock_query", `{"codes":"`+code+`"}`)
-			if result != "" {
-				s.speakSimple(ctx, truncateText(result, 200))
-			} else {
-				s.speakSimple(ctx, "行情没查到。")
-			}
-		} else {
-			result := s.callMCPTool(ctx, "web_search", `{"query":"`+t+` 股价"}`)
-			if result != "" {
-				s.speakSimple(ctx, truncateText(result, 200))
-			} else {
-				s.speakSimple(ctx, "没查到这只股票。")
-			}
-		}
-		return true
-	}
-
-	// 4. 动作指令（直接执行，不说话）
-	actionMap := []struct{ kw, action string }{
-		{"坐下", "sit"},
-		{"站起来", "home"},
-		{"站直", "home"},
-		{"复位", "home"},
-		{"太空步", "moonwalk"},
-		{"月球漫步", "moonwalk"},
-		{"跳舞", "swing"},
-		{"摇摆", "swing"},
-		{"挥手", "hand_wave"},
-		{"跳跃", "jump"},
-		{"跳一下", "jump"},
-		{"广播体操", "radio_calisthenics"},
-		{"大风车", "windmill"},
-		{"起飞", "takeoff"},
-		{"健身", "fitness"},
-		{"打招呼", "greeting"},
-		{"害羞", "shy"},
-	}
-	for _, a := range actionMap {
-		if strings.Contains(t, a.kw) {
-			result := s.callMCPTool(ctx, "self_otto_action", `{"action":"`+a.action+`"}`)
-			if result != "" {
-				s.speakSimple(ctx, result)
-			} else {
-				s.speakSimple(ctx, "好的。")
-			}
-			return true
-		}
-	}
-
-	// 5. 你是谁
-	if containsAny(t, []string{"你是谁", "你叫什么", "你的名字"}) {
-		s.speakSimple(ctx, "我是宇宙第二聪明。")
-		return true
-	}
-
-	// 6. 现在几点/时间
-	if containsAny(t, []string{"几点", "时间", "现在几"}) {
-		s.speakSimple(ctx, time.Now().Format("现在是15点04分"))
-		return true
-	}
-
-	// 7. 谢谢
-	if containsAny(t, []string{"谢谢", "多谢", "感谢"}) {
-		s.speakSimple(ctx, "不客气，宇宙第一聪明。")
-		return true
-	}
-
-	// 8. 再见
-	if containsAny(t, []string{"再见", "拜拜", "晚安"}) {
-		s.speakSimple(ctx, "再见，宇宙第一聪明。")
-		return true
-	}
-
-	// 未命中规则：走 LLM 分身（可查新闻、行情、回答问题）
+	// 其他所有话：走 LLM 分身（联网、天气、新闻、行情、聊天、动作，完整能力）
 	return false
 }
-
 func (s *ChatSession) ClearChatTextQueue() {
 	s.chatTextQueue.Clear()
 }
