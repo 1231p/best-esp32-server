@@ -878,6 +878,10 @@ func (l *LLMManager) handleLLMResponse(ctx context.Context, userMessage *schema.
 	toolExecutor := newToolCallExecutor(l, toolExecCtx)
 	assistantSaved := false
 	result := llmHandleResult{}
+	// 流式前缀缓冲：DeepSeek 先吐文本后吐 tool_calls，先缓存文本分片，
+	// 收到 tool_calls 即丢弃（工具轮静音），IsEnd 无工具时才回放给 TTS
+	var speechItems []llm_common.LLMResponseStruct
+	speechMuted := false
 
 	saveInterruptedAssistant := func() {
 		if assistantSaved {
@@ -940,16 +944,19 @@ func (l *LLMManager) handleLLMResponse(ctx context.Context, userMessage *schema.
 					log.Debugf("获取到工具: %+v", llmResponse.ToolCalls)
 					toolCalls = append(toolCalls, llmResponse.ToolCalls...)
 					toolExecutor.Submit(llmResponse.ToolCalls)
+					// 工具轮静音（流式）：丢弃已缓存的前缀文本，避免"好的，我来查XX"先于工具被播报
+					if len(speechItems) > 0 {
+						log.Debugf("检测到工具调用，丢弃 %d 个缓存的前缀文本分片", len(speechItems))
+					}
+					speechItems = nil
+					speechMuted = true
 				}
 
 				hasText := strings.TrimSpace(llmResponse.Text) != ""
-				if (hasText || llmResponse.IsStart || llmResponse.IsEnd) && len(toolCalls) == 0 {
-					// 双流式收尾依赖空文本的 IsEnd 信号，不能只在有文本时才传给 TTS。
-					// 工具调用轮静音：不播 TTS，避免"好的，我来执行XX"被反复播报
-					if err := l.ttsManager.handleTextResponseWithHooks(ctx, llmResponse, false, onTTSItemEnqueued, onTTSPlaybackStart); err != nil {
-						result.ok = true
-						return result, err
-					}
+				// 前缀缓冲：文本分片先缓存，等 IsEnd 才能确认本轮是否调用工具。
+				// 收到 tool_calls 分片时清空缓存（工具轮静音）；IsEnd 且无工具时按序回放，保持句级流式。
+				if !speechMuted && (hasText || llmResponse.IsStart || llmResponse.IsEnd) {
+					speechItems = append(speechItems, llmResponse)
 				}
 				if hasText {
 					fullText.WriteString(llmResponse.Text)
@@ -957,6 +964,14 @@ func (l *LLMManager) handleLLMResponse(ctx context.Context, userMessage *schema.
 
 				if llmResponse.IsEnd {
 					if len(toolCalls) == 0 {
+						// 纯文本回复：IsEnd 已确认本轮无工具调用，回放缓存的句子分片给 TTS
+						for _, cached := range speechItems {
+							if err := l.ttsManager.handleTextResponseWithHooks(ctx, cached, false, onTTSItemEnqueued, onTTSPlaybackStart); err != nil {
+								result.ok = true
+								return result, err
+							}
+						}
+						speechItems = nil
 						//写到redis中
 						if userMessage != nil {
 							if userMessage.Role == schema.User {
