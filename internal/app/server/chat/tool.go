@@ -115,36 +115,19 @@ func (l *LLMManager) handleToolCallResponse(ctx context.Context, respMsg *schema
 	// 工具调用成功后的处理
 	if invokeToolSuccess && !shouldStopLLMProcessing {
 		isActionTool := false
-		isInfoTool := false
 		for _, tc := range tools {
 			name := tc.Function.Name
 			if strings.HasPrefix(name, "self.otto") || strings.HasPrefix(name, "self_otto") {
 				isActionTool = true
 				break
 			}
-			if name == "web_search" || name == "stock_query" || name == "get_weather" || name == "read_memory" {
-				isInfoTool = true
-			}
 		}
 		if isActionTool {
 			// 动作类工具：不递归，动作本身就是回应
-		} else if isInfoTool {
-			// 信息类工具：结果直接播报（截断），不递归 LLM，杜绝循环
-			for _, r := range results {
-				txt := extractMCPText(r.message.Content)
-				if txt != "" {
-					runes := []rune(txt)
-					if len(runes) > 200 {
-						txt = string(runes[:200])
-					}
-					if l.session != nil {
-						l.session.speakSimple(ctx, txt)
-					}
-					break
-				}
-			}
 		} else {
-			// 其他工具：递归，但限制轮数防止无限循环
+			// 信息类/其他工具：递归 LLM，让它把工具结果提炼成 1-3 句口语播报。
+			// 直接念工具返回的原文（搜索列表/门户条目）是"生肉"，LLM 总结才像人话。
+			// 前缀已由 llm.go 缓冲静音，人格已约束简洁，可放心递归。
 			nest, _ := ctx.Value("nest").(int)
 			if nest < 3 {
 				l.DoLLmRequest(context.WithValue(ctx, "nest", nest+1), nil, l.einoTools, true, nil)
